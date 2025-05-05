@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/berrykuipers-mcp-services-radarr-sonarr-badge.png)](https://mseep.ai/app/berrykuipers-mcp-services-radarr-sonarr)
+
 # Radarr and Sonarr MCP Server
 
 A Python-based Model Context Protocol (MCP) server that provides AI assistants like Claude with access to your Radarr (movies) and Sonarr (TV series) data.
