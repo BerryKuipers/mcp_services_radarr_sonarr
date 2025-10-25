@@ -17,7 +17,7 @@ This MCP server allows AI assistants to query your complete media library via Ra
 - **Rich Filtering**: Filter by year, watched status, actors, artists, and more
 - **Multi-Source Watch Status**: Trakt, Jellyfin, and Plex integration
 - **Claude Desktop Compatible**: Works seamlessly with Claude's MCP client
-- **29 Total Tools**: Comprehensive media management capabilities
+- **27 Total Tools**: Comprehensive media management capabilities
 - **4 Resources**: Browse your entire collection
 - **Well-tested**: Comprehensive test suite for reliability
 
@@ -94,7 +94,7 @@ You can also manually edit the `config.json` file:
 
 ## Available MCP Tools
 
-This server provides **29 tools** across 5 categories:
+This server provides **27 tools** across 5 categories:
 
 ### Movies (3 tools)
 - `get_available_movies` - Get a list of movies with optional filters

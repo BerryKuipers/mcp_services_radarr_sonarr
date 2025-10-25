@@ -106,13 +106,8 @@ export TRAKT_CLIENT_SECRET="your_client_secret_here"  # Optional
    - Exchange for access token:
      ```bash
      curl -X POST https://api.trakt.tv/oauth/token \
-       -d '{
-         "code": "CODE_FROM_ABOVE",
-         "client_id": "YOUR_CLIENT_ID",
-         "client_secret": "YOUR_CLIENT_SECRET",
-         "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
-         "grant_type": "authorization_code"
-       }'
+       -H "Content-Type: application/json" \
+       -d '{"code":"CODE_FROM_ABOVE","client_id":"YOUR_CLIENT_ID","client_secret":"YOUR_CLIENT_SECRET","redirect_uri":"urn:ietf:wg:oauth:2.0:oob","grant_type":"authorization_code"}'
      ```
    - Save the `access_token` from the response
 

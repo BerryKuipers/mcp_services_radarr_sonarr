@@ -35,7 +35,7 @@ This FastMCP 2.0+ server provides AI assistants with comprehensive access to you
 
 ### 🎯 MCP Core Capabilities
 
-#### 1. Tools (29 Total)
+#### 1. Tools (27 Total)
 
 **Movies (3 tools):**
 - `get_available_movies` - Query movies with filters (year, downloaded, watched, actors, limit)
