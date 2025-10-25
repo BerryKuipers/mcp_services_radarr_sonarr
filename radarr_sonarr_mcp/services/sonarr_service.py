@@ -124,6 +124,32 @@ class SonarrService:
             logging.error(f"Error fetching series from Sonarr: {e}")
             raise Exception(f"Failed to fetch series from Sonarr: {e}")
     
+    def get_series(self, series_id: int) -> Series:
+        """
+        Fetch a single TV series by ID from Sonarr.
+
+        Args:
+            series_id: The Sonarr series ID
+
+        Returns:
+            Series object
+
+        Raises:
+            Exception: If series not found or API error
+        """
+        try:
+            response = requests.get(
+                f"{self.config.base_url}/series/{series_id}",
+                params={"apikey": self.config.api_key},
+                timeout=30
+            )
+            response.raise_for_status()
+            return Series.from_dict(response.json())
+        except requests.RequestException as e:
+            import logging
+            logging.error(f"Error fetching series ID {series_id} from Sonarr: {e}")
+            raise Exception(f"Failed to fetch series from Sonarr: {e}")
+
     def lookup_series(self, term: str) -> List[Series]:
         """Look up TV series by search term."""
         try:

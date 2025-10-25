@@ -25,10 +25,10 @@ classifiers = [
 keywords = ["mcp", "model-context-protocol", "radarr", "sonarr", "jellyfin", "plex", "media", "ai", "llm"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/radarr-sonarr-mcp"
-Documentation = "https://github.com/yourusername/radarr-sonarr-mcp#readme"
-Repository = "https://github.com/yourusername/radarr-sonarr-mcp"
-"Bug Tracker" = "https://github.com/yourusername/radarr-sonarr-mcp/issues"
+Homepage = "https://github.com/BerryKuipers/radarr-sonarr-mcp"
+Documentation = "https://github.com/BerryKuipers/radarr-sonarr-mcp#readme"
+Repository = "https://github.com/BerryKuipers/radarr-sonarr-mcp"
+"Bug Tracker" = "https://github.com/BerryKuipers/radarr-sonarr-mcp/issues"
 
 [project.scripts]
 radarr-sonarr-mcp = "radarr_sonarr_mcp.cli:main"
@@ -37,7 +37,6 @@ dependencies = [
   "fastmcp>=2.0.0",
   "requests>=2.28.0",
   "pydantic>=2.0.0",
-  "httpx>=0.24.0"
 ]
 
 [project.optional-dependencies]

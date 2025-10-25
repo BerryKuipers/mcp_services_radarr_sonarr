@@ -65,7 +65,33 @@ class RadarrService:
             import logging
             logging.error(f"Error fetching movies from Radarr: {e}")
             raise Exception(f"Failed to fetch movies from Radarr: {e}")
-    
+
+    def get_movie(self, movie_id: int) -> Movie:
+        """
+        Fetch a single movie by ID from Radarr.
+
+        Args:
+            movie_id: The Radarr movie ID
+
+        Returns:
+            Movie object
+
+        Raises:
+            Exception: If movie not found or API error
+        """
+        try:
+            response = requests.get(
+                f"{self.config.base_url}/movie/{movie_id}",
+                params={"apikey": self.config.api_key},
+                timeout=30
+            )
+            response.raise_for_status()
+            return Movie.from_dict(response.json())
+        except requests.RequestException as e:
+            import logging
+            logging.error(f"Error fetching movie ID {movie_id} from Radarr: {e}")
+            raise Exception(f"Failed to fetch movie from Radarr: {e}")
+
     def lookup_movie(self, term: str) -> List[Movie]:
         """Look up movies by search term."""
         try:

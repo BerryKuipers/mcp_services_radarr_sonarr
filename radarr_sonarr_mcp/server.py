@@ -114,20 +114,22 @@ def load_config() -> Dict[str, Any]:
 # Helper Functions
 # =============================================================================
 
-def is_watched_series(title: str, config: Dict[str, Any], sonarr_service: SonarrService) -> bool:
+def is_watched_series(series, config: Dict[str, Any], sonarr_service: SonarrService) -> bool:
     """
     Check if a series is watched using available media services.
 
-    Checks Trakt, Jellyfin, and Plex in order of priority.
+    Checks Trakt, Jellyfin, Plex, and falls back to Sonarr's own logic.
 
     Args:
-        title: Series title to check
+        series: Series object to check
         config: Configuration dictionary
         sonarr_service: SonarrService instance
 
     Returns:
         True if series is watched, False otherwise
     """
+    from radarr_sonarr_mcp.services.sonarr_service import Series
+    title = series.title if isinstance(series, Series) else str(series)
     statuses = []
 
     # Check Trakt first (most reliable for watch status)
@@ -165,7 +167,7 @@ def is_watched_series(title: str, config: Dict[str, Any], sonarr_service: Sonarr
         return any(statuses)
 
     # Fallback to Sonarr's own logic
-    return False
+    return sonarr_service.is_series_watched(series) if isinstance(series, Series) else False
 
 
 def is_watched_movie(title: str, config: Dict[str, Any], year: Optional[int] = None) -> bool:
@@ -382,11 +384,7 @@ def get_movie_details(movie_id: int) -> Dict[str, Any]:
         Dictionary containing detailed movie information
     """
     try:
-        all_movies = radarr_service.get_all_movies()
-        movie = next((m for m in all_movies if m.id == movie_id), None)
-
-        if not movie:
-            return {"error": f"Movie with ID {movie_id} not found"}
+        movie = radarr_service.get_movie(movie_id)
 
         return {
             "id": movie.id,
@@ -452,12 +450,12 @@ def get_available_series(
             if watched:
                 filtered_series = [
                     s for s in filtered_series
-                    if is_watched_series(s.title, config, sonarr_service)
+                    if is_watched_series(s, config, sonarr_service)
                 ]
             else:
                 filtered_series = [
                     s for s in filtered_series
-                    if not is_watched_series(s.title, config, sonarr_service)
+                    if not is_watched_series(s, config, sonarr_service)
                 ]
 
         if actors:
@@ -483,7 +481,7 @@ def get_available_series(
                     "status": s.status,
                     "network": s.network,
                     "genres": s.genres or [],
-                    "watched": is_watched_series(s.title, config, sonarr_service),
+                    "watched": is_watched_series(s, config, sonarr_service),
                     "episodeCount": s.statistics.episode_count if s.statistics else 0,
                     "downloadedEpisodes": s.statistics.episode_file_count if s.statistics else 0,
                 }
@@ -543,11 +541,7 @@ def get_series_details(series_id: int) -> Dict[str, Any]:
         Dictionary containing detailed series information
     """
     try:
-        all_series = sonarr_service.get_all_series()
-        series = next((s for s in all_series if s.id == series_id), None)
-
-        if not series:
-            return {"error": f"Series with ID {series_id} not found"}
+        series = sonarr_service.get_series(series_id)
 
         return {
             "id": series.id,
@@ -558,7 +552,7 @@ def get_series_details(series_id: int) -> Dict[str, Any]:
             "network": series.network,
             "genres": series.genres or [],
             "tags": series.tags or [],
-            "watched": is_watched_series(series.title, config, sonarr_service),
+            "watched": is_watched_series(series, config, sonarr_service),
             "statistics": {
                 "episodeCount": series.statistics.episode_count if series.statistics else 0,
                 "episodeFileCount": series.statistics.episode_file_count if series.statistics else 0,
