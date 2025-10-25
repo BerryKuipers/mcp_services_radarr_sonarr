@@ -647,8 +647,382 @@ def series_resource() -> str:
 
 
 # =============================================================================
+# Tools - Calendar & Upcoming
+# =============================================================================
+
+@mcp.tool()
+def get_upcoming_movies(
+    days_ahead: int = Field(30, description="Days to look ahead", ge=1, le=365),
+) -> Dict[str, Any]:
+    """
+    Get movies releasing in the next N days (in cinemas or digital).
+
+    Useful for planning what to watch and staying updated on new releases.
+
+    Example queries:
+    - "What movies are coming out this month?"
+    - "Show me upcoming releases in the next 7 days"
+
+    Args:
+        days_ahead: Number of days to look ahead (1-365)
+
+    Returns:
+        Dictionary containing upcoming movies with release dates
+    """
+    try:
+        import datetime
+
+        all_movies = radarr_service.get_all_movies()
+        today = datetime.datetime.now()
+        end_date = today + datetime.timedelta(days=days_ahead)
+
+        upcoming = []
+        for movie in all_movies:
+            # Check if movie has a release date in the data
+            release_date_str = movie.data.get('inCinemas') or movie.data.get('digitalRelease')
+            if release_date_str:
+                try:
+                    release_date = datetime.datetime.fromisoformat(release_date_str.replace('Z', '+00:00'))
+                    if today <= release_date <= end_date:
+                        upcoming.append({
+                            "id": movie.id,
+                            "title": movie.title,
+                            "year": movie.year,
+                            "releaseDate": release_date_str,
+                            "overview": movie.overview,
+                            "genres": movie.genres or [],
+                            "hasFile": movie.has_file,
+                        })
+                except (ValueError, AttributeError):
+                    pass
+
+        # Sort by release date
+        upcoming.sort(key=lambda x: x["releaseDate"])
+
+        return {
+            "count": len(upcoming),
+            "daysAhead": days_ahead,
+            "movies": upcoming
+        }
+    except Exception as e:
+        logger.error(f"Error getting upcoming movies: {e}")
+        return {"error": str(e), "count": 0, "movies": []}
+
+
+@mcp.tool()
+def get_upcoming_episodes(
+    days_ahead: int = Field(7, description="Days to look ahead", ge=1, le=90),
+    unmonitored: bool = Field(False, description="Include unmonitored series"),
+) -> Dict[str, Any]:
+    """
+    Get TV episodes airing in the next N days.
+
+    Useful for staying current with your TV shows.
+
+    Example queries:
+    - "What new episodes are coming this week?"
+    - "Show me upcoming episodes for my series"
+
+    Args:
+        days_ahead: Number of days to look ahead (1-90)
+        unmonitored: Whether to include unmonitored series
+
+    Returns:
+        Dictionary containing upcoming episodes with air dates
+    """
+    try:
+        import datetime
+
+        all_series = sonarr_service.get_all_series()
+        today = datetime.datetime.now()
+        end_date = today + datetime.timedelta(days=days_ahead)
+
+        upcoming = []
+        for series in all_series:
+            if not unmonitored and not series.data.get('monitored', True):
+                continue
+
+            try:
+                episodes = sonarr_service.get_episodes(series.id)
+                for episode in episodes:
+                    if episode.air_date:
+                        try:
+                            air_date = datetime.datetime.fromisoformat(episode.air_date)
+                            if today <= air_date <= end_date:
+                                upcoming.append({
+                                    "seriesId": series.id,
+                                    "seriesTitle": series.title,
+                                    "episodeId": episode.id,
+                                    "seasonNumber": episode.season_number,
+                                    "episodeNumber": episode.episode_number,
+                                    "title": episode.title,
+                                    "airDate": episode.air_date,
+                                    "hasFile": episode.has_file,
+                                    "overview": episode.overview,
+                                })
+                        except (ValueError, AttributeError):
+                            pass
+            except Exception as e:
+                logger.debug(f"Error getting episodes for series {series.id}: {e}")
+                continue
+
+        # Sort by air date
+        upcoming.sort(key=lambda x: x["airDate"])
+
+        return {
+            "count": len(upcoming),
+            "daysAhead": days_ahead,
+            "episodes": upcoming
+        }
+    except Exception as e:
+        logger.error(f"Error getting upcoming episodes: {e}")
+        return {"error": str(e), "count": 0, "episodes": []}
+
+
+# =============================================================================
+# Tools - Missing & Wanted Content
+# =============================================================================
+
+@mcp.tool()
+def get_missing_movies(
+    limit: int = Field(50, description="Maximum results to return", ge=1, le=500),
+) -> Dict[str, Any]:
+    """
+    Get movies in your library that haven't been downloaded yet.
+
+    Shows your wishlist of wanted movies that are being monitored.
+
+    Example queries:
+    - "What movies am I missing?"
+    - "Show me my wishlist that hasn't downloaded"
+
+    Args:
+        limit: Maximum number of results (1-500)
+
+    Returns:
+        Dictionary containing missing movies
+    """
+    try:
+        all_movies = radarr_service.get_all_movies()
+        missing = [
+            {
+                "id": m.id,
+                "title": m.title,
+                "year": m.year,
+                "overview": m.overview,
+                "status": m.status,
+                "genres": m.genres or [],
+            }
+            for m in all_movies
+            if not m.has_file and m.data.get('monitored', True)
+        ][:limit]
+
+        return {
+            "count": len(missing),
+            "movies": missing
+        }
+    except Exception as e:
+        logger.error(f"Error getting missing movies: {e}")
+        return {"error": str(e), "count": 0, "movies": []}
+
+
+@mcp.tool()
+def get_missing_episodes(
+    series_id: Optional[int] = Field(None, description="Filter by specific series ID"),
+    limit: int = Field(100, description="Maximum results to return", ge=1, le=1000),
+) -> Dict[str, Any]:
+    """
+    Get episodes that haven't been downloaded yet.
+
+    Shows episodes you're missing from monitored series.
+
+    Example queries:
+    - "What episodes am I missing?"
+    - "Show missing episodes for Breaking Bad"
+
+    Args:
+        series_id: Optional series ID to filter by
+        limit: Maximum number of results (1-1000)
+
+    Returns:
+        Dictionary containing missing episodes
+    """
+    try:
+        missing = []
+
+        if series_id:
+            series_list = [s for s in sonarr_service.get_all_series() if s.id == series_id]
+        else:
+            series_list = sonarr_service.get_all_series()
+
+        for series in series_list:
+            if not series.data.get('monitored', True):
+                continue
+
+            try:
+                episodes = sonarr_service.get_episodes(series.id)
+                for episode in episodes:
+                    if not episode.has_file and episode.monitored:
+                        missing.append({
+                            "seriesId": series.id,
+                            "seriesTitle": series.title,
+                            "episodeId": episode.id,
+                            "seasonNumber": episode.season_number,
+                            "episodeNumber": episode.episode_number,
+                            "title": episode.title,
+                            "airDate": episode.air_date,
+                            "overview": episode.overview,
+                        })
+
+                        if len(missing) >= limit:
+                            break
+            except Exception as e:
+                logger.debug(f"Error getting episodes for series {series.id}: {e}")
+                continue
+
+            if len(missing) >= limit:
+                break
+
+        return {
+            "count": len(missing),
+            "episodes": missing
+        }
+    except Exception as e:
+        logger.error(f"Error getting missing episodes: {e}")
+        return {"error": str(e), "count": 0, "episodes": []}
+
+
+# =============================================================================
+# Tools - Statistics & Analytics
+# =============================================================================
+
+@mcp.tool()
+def get_collection_statistics() -> Dict[str, Any]:
+    """
+    Get comprehensive statistics about your entire media collection.
+
+    Provides insights into your library including counts, storage, quality,
+    and genre distributions.
+
+    Example queries:
+    - "Show me my collection stats"
+    - "How big is my library?"
+
+    Returns:
+        Dictionary containing comprehensive collection statistics
+    """
+    try:
+        # Get all data
+        movies = radarr_service.get_all_movies()
+        series = sonarr_service.get_all_series()
+
+        # Movie statistics
+        movie_count = len(movies)
+        movies_downloaded = sum(1 for m in movies if m.has_file)
+        movies_watched = sum(1 for m in movies if is_watched_movie(m.title, config))
+
+        # Series statistics
+        series_count = len(series)
+        total_episodes = sum(s.statistics.episode_count if s.statistics else 0 for s in series)
+        downloaded_episodes = sum(s.statistics.episode_file_count if s.statistics else 0 for s in series)
+        total_size = sum(s.statistics.size_on_disk if s.statistics else 0 for s in series)
+
+        # Genre distribution
+        from collections import Counter
+        movie_genres = Counter()
+        series_genres = Counter()
+
+        for movie in movies:
+            if movie.genres:
+                for genre in movie.genres:
+                    movie_genres[genre] += 1
+
+        for show in series:
+            if show.genres:
+                for genre in show.genres:
+                    series_genres[genre] += 1
+
+        return {
+            "movies": {
+                "total": movie_count,
+                "downloaded": movies_downloaded,
+                "missing": movie_count - movies_downloaded,
+                "watched": movies_watched,
+                "unwatched": movies_downloaded - movies_watched,
+                "topGenres": dict(movie_genres.most_common(5)),
+            },
+            "series": {
+                "total": series_count,
+                "totalEpisodes": total_episodes,
+                "downloadedEpisodes": downloaded_episodes,
+                "missingEpisodes": total_episodes - downloaded_episodes,
+                "storageSizeBytes": total_size,
+                "storageSizeGB": round(total_size / (1024**3), 2),
+                "topGenres": dict(series_genres.most_common(5)),
+            },
+            "overall": {
+                "totalItems": movie_count + series_count,
+                "totalStorageGB": round(total_size / (1024**3), 2),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting collection statistics: {e}")
+        return {"error": str(e)}
+
+
+# =============================================================================
 # Prompts
 # =============================================================================
+
+@mcp.prompt()
+def whats_new_this_week() -> str:
+    """Check what's new in movies and TV this week."""
+    return """Please show me what's new this week:
+1. Movies releasing in cinemas or digital in the next 7 days
+2. New TV episodes airing this week for series I'm watching
+3. Highlight anything from popular or highly-rated content
+4. Any anticipated releases I should know about
+
+Present this as a weekly digest."""
+
+
+@mcp.prompt()
+def catch_up_on_series() -> str:
+    """Find series that need catching up."""
+    return """Show me series I should catch up on:
+1. Series with new downloaded episodes I haven't watched
+2. Series I started but haven't finished
+3. Priority order based on what's ending soon or currently popular
+4. Estimated time needed to catch up
+
+Help me decide what to binge next!"""
+
+
+@mcp.prompt()
+def plan_movie_marathon() -> str:
+    """Plan a themed movie marathon."""
+    return """Help me plan a movie marathon:
+1. Suggest a theme (director, actor, genre, franchise, decade)
+2. Find 4-6 movies in my collection that fit the theme
+3. Order them for the best viewing experience
+4. Estimate total runtime
+5. Note which ones I haven't watched yet
+
+Make it a memorable movie day!"""
+
+
+@mcp.prompt()
+def collection_audit() -> str:
+    """Audit collection for improvements."""
+    return """Audit my media collection:
+1. Missing movies from popular franchises I have started
+2. Incomplete TV series (missing episodes or seasons)
+3. Most-wanted missing content based on ratings
+4. Series I'm watching that have new seasons available
+5. Storage hogs (very large files)
+
+Help me optimize and complete my collection!"""
+
 
 @mcp.prompt()
 def recommend_unwatched_movies() -> str:
