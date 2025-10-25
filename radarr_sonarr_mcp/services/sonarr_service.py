@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+import logging
 import requests
-from ..config import SonarrConfig
+
+from radarr_sonarr_mcp.config import SonarrConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
