@@ -62,7 +62,6 @@ class RadarrService:
             
             return movies
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error fetching movies from Radarr: {e}")
             raise Exception(f"Failed to fetch movies from Radarr: {e}")
 
@@ -88,7 +87,6 @@ class RadarrService:
             response.raise_for_status()
             return Movie.from_dict(response.json())
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error fetching movie ID {movie_id} from Radarr: {e}")
             raise Exception(f"Failed to fetch movie from Radarr: {e}")
 
@@ -108,7 +106,6 @@ class RadarrService:
             
             return movies
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error looking up movie in Radarr: {e}")
             raise Exception(f"Failed to lookup movie in Radarr: {e}")
     
@@ -124,7 +121,6 @@ class RadarrService:
             
             return response.json()
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error fetching movie file for ID {movie_id}: {e}")
             raise Exception(f"Failed to fetch movie file: {e}")
 
@@ -139,3 +135,85 @@ class RadarrService:
         # This is an assumption - implementation may vary
         # Assuming 'watchlist' tag with ID 1 (adjust as needed)
         return 1 in (movie.tags or [])
+
+    def get_calendar(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Movie]:
+        """
+        Fetch upcoming movie releases from Radarr calendar.
+
+        Args:
+            start_date: Start date in ISO format (YYYY-MM-DD)
+            end_date: End date in ISO format (YYYY-MM-DD)
+
+        Returns:
+            List of upcoming movies
+        """
+        try:
+            params = {"apikey": self.config.api_key}
+            if start_date:
+                params["start"] = start_date
+            if end_date:
+                params["end"] = end_date
+
+            response = requests.get(
+                f"{self.config.base_url}/calendar",
+                params=params,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            movies = []
+            for movie_data in response.json():
+                movies.append(Movie.from_dict(movie_data))
+
+            return movies
+        except requests.RequestException as e:
+            logger.error(f"Error fetching calendar from Radarr: {e}")
+            raise Exception(f"Failed to fetch calendar from Radarr: {e}")
+
+    def get_wanted_missing(self) -> List[Movie]:
+        """
+        Fetch wanted/missing movies from Radarr with pagination support.
+
+        Returns:
+            List of all missing movies
+        """
+        try:
+            movies = []
+            page = 1
+            page_size = 100
+            total_records = None
+
+            while True:
+                response = requests.get(
+                    f"{self.config.base_url}/wanted/missing",
+                    params={
+                        "apikey": self.config.api_key,
+                        "page": page,
+                        "pageSize": page_size
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                records = data.get('records', [])
+
+                # Add movies from this page
+                for movie_data in records:
+                    movies.append(Movie.from_dict(movie_data))
+
+                # Get total records from first page
+                if total_records is None:
+                    total_records = data.get('totalRecords', 0)
+
+                # Check if we've fetched all records
+                if len(movies) >= total_records or len(records) < page_size:
+                    break
+
+                page += 1
+
+            logger.info(f"Fetched {len(movies)} missing movies from Radarr across {page} page(s)")
+            return movies
+        except requests.RequestException as e:
+            logger.error(f"Error fetching missing movies from Radarr: {e}")
+            raise Exception(f"Failed to fetch missing movies from Radarr: {e}")

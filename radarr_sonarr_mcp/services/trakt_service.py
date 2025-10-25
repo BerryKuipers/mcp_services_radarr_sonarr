@@ -37,6 +37,10 @@ class TraktService:
         self.access_token = config.get("accessToken", "")
         self.client_secret = config.get("clientSecret", "")
 
+        # Cache for watch history to avoid redundant API calls
+        self._watched_movies_cache: Optional[List[Dict[str, Any]]] = None
+        self._watched_shows_cache: Optional[List[Dict[str, Any]]] = None
+
         if not self.client_id:
             logger.warning("Trakt client_id not configured. Some features may not work.")
 
@@ -111,12 +115,18 @@ class TraktService:
         """
         Get watched movies for a user.
 
+        Results are cached after the first call to avoid redundant API requests.
+
         Args:
             username: Trakt username (uses authenticated user if None)
 
         Returns:
             List of watched movies with play counts and last watched date
         """
+        # Return cached result if available
+        if self._watched_movies_cache is not None:
+            return self._watched_movies_cache
+
         if username:
             endpoint = f"/users/{username}/watched/movies"
             authenticated = False
@@ -124,11 +134,16 @@ class TraktService:
             endpoint = "/sync/watched/movies"
             authenticated = True
 
-        return self._make_request(endpoint, authenticated=authenticated)
+        result = self._make_request(endpoint, authenticated=authenticated)
+        # Cache the result
+        self._watched_movies_cache = result
+        return result
 
     def get_watched_shows(self, username: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get watched TV shows for a user.
+
+        Results are cached after the first call to avoid redundant API requests.
 
         Args:
             username: Trakt username (uses authenticated user if None)
@@ -136,6 +151,10 @@ class TraktService:
         Returns:
             List of watched shows with episode details
         """
+        # Return cached result if available
+        if self._watched_shows_cache is not None:
+            return self._watched_shows_cache
+
         if username:
             endpoint = f"/users/{username}/watched/shows"
             authenticated = False
@@ -143,7 +162,10 @@ class TraktService:
             endpoint = "/sync/watched/shows"
             authenticated = True
 
-        return self._make_request(endpoint, authenticated=authenticated)
+        result = self._make_request(endpoint, authenticated=authenticated)
+        # Cache the result
+        self._watched_shows_cache = result
+        return result
 
     def get_history(
         self,

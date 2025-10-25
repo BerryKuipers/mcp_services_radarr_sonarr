@@ -290,20 +290,50 @@ class LidarrService:
             raise Exception(f"Failed to fetch calendar from Lidarr: {e}")
 
     def get_wanted_missing(self) -> List[Album]:
-        """Fetch wanted/missing albums from Lidarr."""
+        """
+        Fetch wanted/missing albums from Lidarr with pagination support.
+
+        Fetches all pages to ensure no missing albums are excluded.
+
+        Returns:
+            List of all missing albums
+        """
         try:
-            response = requests.get(
-                f"{self.config.base_url}/wanted/missing",
-                params={"apikey": self.config.api_key, "pageSize": 100},
-                timeout=30
-            )
-            response.raise_for_status()
-
             albums = []
-            records = response.json().get('records', [])
-            for album_data in records:
-                albums.append(Album.from_dict(album_data))
+            page = 1
+            page_size = 100
+            total_records = None
 
+            while True:
+                response = requests.get(
+                    f"{self.config.base_url}/wanted/missing",
+                    params={
+                        "apikey": self.config.api_key,
+                        "page": page,
+                        "pageSize": page_size
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                records = data.get('records', [])
+
+                # Add albums from this page
+                for album_data in records:
+                    albums.append(Album.from_dict(album_data))
+
+                # Get total records from first page
+                if total_records is None:
+                    total_records = data.get('totalRecords', 0)
+
+                # Check if we've fetched all records
+                if len(albums) >= total_records or len(records) < page_size:
+                    break
+
+                page += 1
+
+            logger.info(f"Fetched {len(albums)} missing albums from Lidarr across {page} page(s)")
             return albums
         except requests.RequestException as e:
             logger.error(f"Error fetching missing albums from Lidarr: {e}")

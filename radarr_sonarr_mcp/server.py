@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-"""Main MCP server implementation for Radarr/Sonarr with FastMCP 2.0+."""
+"""Main MCP server implementation for Radarr/Sonarr/Lidarr with FastMCP 2.0+."""
 
 import os
 import json
 import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from datetime import datetime, timedelta
+from collections import Counter
 
 from fastmcp import FastMCP
 from pydantic import Field
@@ -19,8 +21,11 @@ from radarr_sonarr_mcp.config import (
     ServerConfig,
 )
 from radarr_sonarr_mcp.services.radarr_service import RadarrService
-from radarr_sonarr_mcp.services.sonarr_service import SonarrService
+from radarr_sonarr_mcp.services.sonarr_service import SonarrService, Series
 from radarr_sonarr_mcp.services.lidarr_service import LidarrService
+from radarr_sonarr_mcp.services.trakt_service import TraktService
+from radarr_sonarr_mcp.services.jellyfin_service import JellyfinService
+from radarr_sonarr_mcp.services.plex_service import PlexService
 
 # Configure logging
 logging.basicConfig(
@@ -142,7 +147,6 @@ def is_watched_series(series, config: Dict[str, Any], sonarr_service: SonarrServ
     Returns:
         True if series is watched, False otherwise
     """
-    from radarr_sonarr_mcp.services.sonarr_service import Series
     title = series.title if isinstance(series, Series) else str(series)
     statuses = []
 
@@ -150,7 +154,6 @@ def is_watched_series(series, config: Dict[str, Any], sonarr_service: SonarrServ
     trakt_cfg = config.get("traktConfig", {})
     if trakt_cfg.get("clientId"):
         try:
-            from radarr_sonarr_mcp.services.trakt_service import TraktService
             trakt = TraktService(trakt_cfg)
             statuses.append(trakt.is_show_watched(title))
         except Exception as e:
@@ -160,7 +163,6 @@ def is_watched_series(series, config: Dict[str, Any], sonarr_service: SonarrServ
     jellyfin_cfg = config.get("jellyfinConfig", {})
     if jellyfin_cfg.get("baseUrl"):
         try:
-            from radarr_sonarr_mcp.services.jellyfin_service import JellyfinService
             jellyfin = JellyfinService(jellyfin_cfg)
             statuses.append(jellyfin.is_series_watched(title))
         except Exception as e:
@@ -170,7 +172,6 @@ def is_watched_series(series, config: Dict[str, Any], sonarr_service: SonarrServ
     plex_cfg = config.get("plexConfig", {})
     if plex_cfg.get("baseUrl"):
         try:
-            from radarr_sonarr_mcp.services.plex_service import PlexService
             plex = PlexService(plex_cfg)
             statuses.append(plex.is_series_watched(title))
         except Exception as e:
@@ -204,7 +205,6 @@ def is_watched_movie(title: str, config: Dict[str, Any], year: Optional[int] = N
     trakt_cfg = config.get("traktConfig", {})
     if trakt_cfg.get("clientId"):
         try:
-            from radarr_sonarr_mcp.services.trakt_service import TraktService
             trakt = TraktService(trakt_cfg)
             statuses.append(trakt.is_movie_watched(title, year))
         except Exception as e:
@@ -214,7 +214,6 @@ def is_watched_movie(title: str, config: Dict[str, Any], year: Optional[int] = N
     jellyfin_cfg = config.get("jellyfinConfig", {})
     if jellyfin_cfg.get("baseUrl"):
         try:
-            from radarr_sonarr_mcp.services.jellyfin_service import JellyfinService
             jellyfin = JellyfinService(jellyfin_cfg)
             statuses.append(jellyfin.is_movie_watched(title))
         except Exception as e:
@@ -224,7 +223,6 @@ def is_watched_movie(title: str, config: Dict[str, Any], year: Optional[int] = N
     plex_cfg = config.get("plexConfig", {})
     if plex_cfg.get("baseUrl"):
         try:
-            from radarr_sonarr_mcp.services.plex_service import PlexService
             plex = PlexService(plex_cfg)
             statuses.append(plex.is_movie_watched(title))
         except Exception as e:
@@ -916,7 +914,6 @@ def get_upcoming_albums(
         Dictionary containing count and list of upcoming albums
     """
     try:
-        from datetime import datetime, timedelta
 
         start_date = datetime.now().strftime("%Y-%m-%d")
         end_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
@@ -1198,7 +1195,6 @@ def get_upcoming_movies(
         Dictionary containing upcoming movies with release dates
     """
     try:
-        import datetime
 
         all_movies = radarr_service.get_all_movies()
         today = datetime.datetime.now()
@@ -1259,7 +1255,6 @@ def get_upcoming_episodes(
         Dictionary containing upcoming episodes with air dates
     """
     try:
-        import datetime
 
         all_series = sonarr_service.get_all_series()
         today = datetime.datetime.now()
@@ -1456,7 +1451,6 @@ def get_collection_statistics() -> Dict[str, Any]:
         total_size = sum(s.statistics.size_on_disk if s.statistics else 0 for s in series)
 
         # Genre distribution
-        from collections import Counter
         movie_genres = Counter()
         series_genres = Counter()
 
@@ -1526,7 +1520,6 @@ def get_trakt_trending_movies(
         if not trakt_cfg.get("clientId"):
             return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "movies": []}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         trending = trakt.get_trending_movies(limit)
 
@@ -1573,7 +1566,6 @@ def get_trakt_trending_shows(
         if not trakt_cfg.get("clientId"):
             return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "shows": []}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         trending = trakt.get_trending_shows(limit)
 
@@ -1624,7 +1616,6 @@ def get_trakt_recommendations_movies(
         if not trakt_cfg.get("accessToken"):
             return {"error": "Trakt access token required for recommendations. Please set TRAKT_ACCESS_TOKEN.", "movies": []}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         recommendations = trakt.get_recommended_movies(limit)
 
@@ -1673,7 +1664,6 @@ def get_trakt_recommendations_shows(
         if not trakt_cfg.get("accessToken"):
             return {"error": "Trakt access token required for recommendations. Please set TRAKT_ACCESS_TOKEN.", "shows": []}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         recommendations = trakt.get_recommended_shows(limit)
 
@@ -1720,7 +1710,6 @@ def get_trakt_user_stats() -> Dict[str, Any]:
         if not trakt_cfg.get("accessToken"):
             return {"error": "Trakt access token required. Please set TRAKT_ACCESS_TOKEN."}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         stats = trakt.get_user_stats()
 
@@ -1759,7 +1748,6 @@ def get_trakt_watch_history(
         if not trakt_cfg.get("accessToken"):
             return {"error": "Trakt access token required. Please set TRAKT_ACCESS_TOKEN.", "history": []}
 
-        from radarr_sonarr_mcp.services.trakt_service import TraktService
         trakt = TraktService(trakt_cfg)
         history = trakt.get_history(media_type, limit)
 
