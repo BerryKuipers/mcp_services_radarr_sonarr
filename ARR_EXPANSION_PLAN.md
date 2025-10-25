@@ -81,6 +81,22 @@ Similar to RadarrService/SonarrService:
 ```python
 # radarr_sonarr_mcp/services/lidarr_service.py
 
+from dataclasses import dataclass
+from typing import List, Dict, Any, Optional
+from radarr_sonarr_mcp.config import LidarrConfig
+
+@dataclass
+class AlbumStatistics:
+    """Placeholder for album statistics"""
+    track_count: int
+    size_on_disk: int
+
+@dataclass
+class ArtistStatistics:
+    """Placeholder for artist statistics"""
+    album_count: int
+    track_count: int
+
 @dataclass
 class Album:
     id: int
