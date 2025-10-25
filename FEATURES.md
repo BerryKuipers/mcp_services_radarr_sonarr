@@ -1,8 +1,8 @@
-# Radarr-Sonarr MCP Server - Features & Capabilities
+# Radarr-Sonarr-Lidarr MCP Server - Features & Capabilities
 
 ## Overview
 
-This FastMCP 2.0+ server provides AI assistants with comprehensive access to your media library through Radarr (movies) and Sonarr (TV series), with integrated watch status tracking via Jellyfin and Plex.
+This FastMCP 2.0+ server provides AI assistants with comprehensive access to your media library through Radarr (movies), Sonarr (TV series), and Lidarr (music), with integrated watch status tracking via Jellyfin, Plex, and Trakt.
 
 ## ✨ Key Features
 
@@ -18,32 +18,69 @@ This FastMCP 2.0+ server provides AI assistants with comprehensive access to you
 - **Smart Filtering**: Filter by year, download status, watched status, cast
 - **Series Lookup**: Search for new shows to add to your library
 
+### 🎵 Music Management (Lidarr)
+- **Browse Music**: Query your entire music library with artists and albums
+- **Album Tracking**: View album details, track counts, and download status
+- **Artist Management**: Browse artists with album counts and statistics
+- **Music Lookup**: Search for new artists and albums to add to your library
+- **Calendar Integration**: Track upcoming album releases
+- **Missing Albums**: Monitor wanted albums that haven't been downloaded
+
 ### 👁️ Watch Status Integration
+- **Trakt Support**: Primary watch status tracking with trending and recommendations
 - **Jellyfin Support**: Automatic watch status from Jellyfin media server
 - **Plex Support**: Automatic watch status from Plex media server
-- **Multi-Source**: Combines status from multiple sources (if watched on either platform, considered watched)
+- **Multi-Source**: Combines status from multiple sources (priority: Trakt → Jellyfin → Plex)
 - **Real-time**: Current watch status for all queries
 
 ### 🎯 MCP Core Capabilities
 
-#### 1. Tools (20 Total)
+#### 1. Tools (29 Total)
 
-**Movies:**
+**Movies (3 tools):**
 - `get_available_movies` - Query movies with filters (year, downloaded, watched, actors, limit)
 - `lookup_movie` - Search for movies by title
 - `get_movie_details` - Get detailed information about a specific movie
 
-**TV Series:**
+**TV Series (4 tools):**
 - `get_available_series` - Query TV series with filters (year, downloaded, watched, actors, limit)
 - `lookup_series` - Search for TV series by title
 - `get_series_details` - Get detailed information about a specific series
 - `get_series_episodes` - Get episodes for a series with optional season filter
 
-#### 2. Resources (2 Total)
+**Music (9 tools):**
+- `get_available_albums` - Query albums with filters (artist, monitored, has_file, limit)
+- `get_available_artists` - Query artists with filters (monitored, limit)
+- `lookup_album` - Search for albums by search term
+- `lookup_artist` - Search for artists by search term
+- `get_album_details` - Get detailed information about a specific album
+- `get_artist_details` - Get detailed information about a specific artist
+- `get_upcoming_albums` - Get upcoming album releases from calendar
+- `get_missing_albums` - Get monitored albums missing files
+- `get_music_collection_statistics` - Comprehensive music library stats
+
+**Calendar & Statistics (5 tools):**
+- `get_upcoming_movies` - Movies releasing in next N days
+- `get_upcoming_episodes` - TV episodes airing in next N days
+- `get_missing_movies` - Monitored movies not downloaded
+- `get_missing_episodes` - Monitored episodes not downloaded
+- `get_collection_statistics` - Comprehensive collection statistics
+
+**Trakt Integration (6 tools):**
+- `get_trakt_trending_movies` - Currently trending movies
+- `get_trakt_trending_shows` - Currently trending TV shows
+- `get_trakt_recommendations_movies` - Personalized movie recommendations
+- `get_trakt_recommendations_shows` - Personalized TV show recommendations
+- `get_trakt_user_stats` - User statistics and watch history overview
+- `get_trakt_watch_history` - Recent watch history
+
+#### 2. Resources (4 Total)
 
 **Browseable Collections:**
 - `radarr://movies` - Browse all movies in formatted markdown
 - `sonarr://series` - Browse all TV series in formatted markdown
+- `lidarr://albums` - Browse all music albums in formatted markdown
+- `lidarr://artists` - Browse all music artists in formatted markdown
 
 Resources provide read-only access to your entire collection in a human-readable format, perfect for browsing and exploration.
 
@@ -131,6 +168,8 @@ Every response includes:
 
 - **Radarr**: API v3+
 - **Sonarr**: API v3+
+- **Lidarr**: API v1+
+- **Trakt**: API v2
 - **Jellyfin**: All versions with API support
 - **Plex**: All versions with token authentication
 
@@ -206,6 +245,22 @@ Potential additions based on MCP evolution:
 - `/api/v3/series/lookup` - Search series
 - `/api/v3/episode` - Episode information
 
+### Lidarr API v1
+- `/api/v1/artist` - List all artists
+- `/api/v1/artist/lookup` - Search artists
+- `/api/v1/album` - List all albums
+- `/api/v1/album/lookup` - Search albums
+- `/api/v1/calendar` - Upcoming album releases
+- `/api/v1/wanted/missing` - Missing albums
+
+### Trakt API v2
+- `/movies/trending` - Trending movies
+- `/shows/trending` - Trending TV shows
+- `/recommendations/movies` - Personalized movie recommendations
+- `/recommendations/shows` - Personalized show recommendations
+- `/sync/history` - Watch history
+- `/users/stats` - User statistics
+
 ### Jellyfin API
 - `/Users/{userId}/Items` - Search movies/series
 - Episode and playback data
@@ -216,4 +271,4 @@ Potential additions based on MCP evolution:
 
 ---
 
-**Note**: This server is designed for read-only operations. No modifications are made to your Radarr, Sonarr, Jellyfin, or Plex installations. All watch status queries are non-destructive.
+**Note**: This server is designed for read-only operations. No modifications are made to your Radarr, Sonarr, Lidarr, Jellyfin, Plex, or Trakt installations. All queries are non-destructive.

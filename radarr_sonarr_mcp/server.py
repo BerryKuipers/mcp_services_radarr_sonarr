@@ -13,12 +13,14 @@ from pydantic import Field
 from radarr_sonarr_mcp.config import (
     RadarrConfig,
     SonarrConfig,
+    LidarrConfig,
     JellyfinConfig,
     PlexConfig,
     ServerConfig,
 )
 from radarr_sonarr_mcp.services.radarr_service import RadarrService
 from radarr_sonarr_mcp.services.sonarr_service import SonarrService
+from radarr_sonarr_mcp.services.lidarr_service import LidarrService
 
 # Configure logging
 logging.basicConfig(
@@ -56,6 +58,12 @@ def load_config() -> Dict[str, Any]:
                 "apiKey": os.environ.get('SONARR_API_KEY', ''),
                 "basePath": os.environ.get('SONARR_BASE_PATH', '/api/v3'),
                 "port": os.environ.get('SONARR_PORT', '8989'),
+                "nasIp": nas_ip,
+            },
+            "lidarrConfig": {
+                "apiKey": os.environ.get('LIDARR_API_KEY', ''),
+                "basePath": os.environ.get('LIDARR_BASE_PATH', '/api/v1'),
+                "port": os.environ.get('LIDARR_PORT', '8686'),
                 "nasIp": nas_ip,
             },
             "jellyfinConfig": {
@@ -101,6 +109,12 @@ def load_config() -> Dict[str, Any]:
             "apiKey": "",
             "basePath": "/api/v3",
             "port": "8989",
+            "nasIp": "10.0.0.23",
+        },
+        "lidarrConfig": {
+            "apiKey": "",
+            "basePath": "/api/v1",
+            "port": "8686",
             "nasIp": "10.0.0.23",
         },
         "jellyfinConfig": {"baseUrl": "", "apiKey": "", "userId": ""},
@@ -247,8 +261,16 @@ sonarr_config = SonarrConfig(
     nas_ip=config["sonarrConfig"].get("nasIp", config["nasConfig"]["ip"]),
 )
 
+lidarr_config = LidarrConfig(
+    api_key=config["lidarrConfig"]["apiKey"],
+    base_path=config["lidarrConfig"]["basePath"],
+    port=config["lidarrConfig"]["port"],
+    nas_ip=config["lidarrConfig"].get("nasIp", config["nasConfig"]["ip"]),
+)
+
 radarr_service = RadarrService(radarr_config)
 sonarr_service = SonarrService(sonarr_config)
+lidarr_service = LidarrService(lidarr_config)
 
 
 # =============================================================================
@@ -610,6 +632,430 @@ def get_series_episodes(
 
 
 # =============================================================================
+# Tools - Music
+# =============================================================================
+
+@mcp.tool()
+def get_available_albums(
+    artist: Optional[str] = Field(None, description="Filter by artist name"),
+    monitored: Optional[bool] = Field(None, description="Filter by monitored status"),
+    has_file: Optional[bool] = Field(None, description="Filter by file availability"),
+    limit: int = Field(100, description="Maximum number of results to return", ge=1, le=1000),
+) -> Dict[str, Any]:
+    """
+    Get a list of available albums from Lidarr with optional filters.
+
+    This tool retrieves your music album collection from Lidarr and supports filtering by:
+    - Artist name
+    - Monitored status
+    - File availability (downloaded or not)
+
+    Example queries:
+    - "Show me all albums by Pink Floyd"
+    - "What albums are monitored but not downloaded?"
+    - "List all downloaded albums"
+
+    Returns:
+        Dictionary containing count and list of albums with details
+    """
+    try:
+        all_albums = lidarr_service.get_all_albums()
+        filtered_albums = all_albums
+
+        # Apply filters
+        if artist is not None:
+            filtered_albums = [
+                a for a in filtered_albums
+                if artist.lower() in a.artist_name.lower()
+            ]
+
+        if monitored is not None:
+            filtered_albums = [a for a in filtered_albums if a.monitored == monitored]
+
+        if has_file is not None:
+            filtered_albums = [a for a in filtered_albums if a.has_file == has_file]
+
+        # Apply limit
+        filtered_albums = filtered_albums[:limit]
+
+        return {
+            "count": len(filtered_albums),
+            "albums": [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "artist": a.artist_name,
+                    "releaseDate": a.release_date,
+                    "monitored": a.monitored,
+                    "hasFile": a.has_file,
+                    "genres": a.genres or [],
+                }
+                for a in filtered_albums
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting albums: {e}")
+        return {"error": str(e), "count": 0, "albums": []}
+
+
+@mcp.tool()
+def get_available_artists(
+    monitored: Optional[bool] = Field(None, description="Filter by monitored status"),
+    limit: int = Field(100, description="Maximum number of results to return", ge=1, le=1000),
+) -> Dict[str, Any]:
+    """
+    Get a list of available artists from Lidarr with optional filters.
+
+    This tool retrieves your music artist collection from Lidarr and supports filtering by:
+    - Monitored status
+
+    Example queries:
+    - "Show me all artists"
+    - "What artists am I monitoring?"
+    - "List all artists in my library"
+
+    Returns:
+        Dictionary containing count and list of artists with details
+    """
+    try:
+        all_artists = lidarr_service.get_all_artists()
+        filtered_artists = all_artists
+
+        # Apply filters
+        if monitored is not None:
+            filtered_artists = [a for a in filtered_artists if a.monitored == monitored]
+
+        # Apply limit
+        filtered_artists = filtered_artists[:limit]
+
+        return {
+            "count": len(filtered_artists),
+            "artists": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "monitored": a.monitored,
+                    "genres": a.genres or [],
+                    "albumCount": a.statistics.album_count if a.statistics else 0,
+                    "trackCount": a.statistics.track_count if a.statistics else 0,
+                }
+                for a in filtered_artists
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting artists: {e}")
+        return {"error": str(e), "count": 0, "artists": []}
+
+
+@mcp.tool()
+def lookup_album(term: str = Field(..., description="Search term for album")) -> Dict[str, Any]:
+    """
+    Search for albums to add to Lidarr.
+
+    This tool searches for albums that can be added to your Lidarr library.
+    Use this when you want to find and potentially add new albums.
+
+    Example queries:
+    - "Search for Dark Side of the Moon album"
+    - "Find The Beatles Abbey Road"
+    - "Look up Thriller by Michael Jackson"
+
+    Returns:
+        Dictionary containing count and list of matching albums
+    """
+    try:
+        albums = lidarr_service.lookup_album(term)
+
+        return {
+            "count": len(albums),
+            "albums": [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "artist": a.artist_name,
+                    "releaseDate": a.release_date,
+                    "monitored": a.monitored,
+                    "genres": a.genres or [],
+                }
+                for a in albums
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error looking up album '{term}': {e}")
+        return {"error": str(e), "count": 0, "albums": []}
+
+
+@mcp.tool()
+def lookup_artist(term: str = Field(..., description="Search term for artist")) -> Dict[str, Any]:
+    """
+    Search for artists to add to Lidarr.
+
+    This tool searches for artists that can be added to your Lidarr library.
+    Use this when you want to find and potentially add new artists.
+
+    Example queries:
+    - "Search for Pink Floyd"
+    - "Find artist The Beatles"
+    - "Look up Miles Davis"
+
+    Returns:
+        Dictionary containing count and list of matching artists
+    """
+    try:
+        artists = lidarr_service.lookup_artist(term)
+
+        return {
+            "count": len(artists),
+            "artists": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "monitored": a.monitored,
+                    "genres": a.genres or [],
+                }
+                for a in artists
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error looking up artist '{term}': {e}")
+        return {"error": str(e), "count": 0, "artists": []}
+
+
+@mcp.tool()
+def get_album_details(album_id: int = Field(..., description="Lidarr album ID")) -> Dict[str, Any]:
+    """
+    Get detailed information about a specific album.
+
+    This tool fetches comprehensive details about an album from Lidarr,
+    including track information, file status, and metadata.
+
+    Example queries:
+    - "Show me details for album ID 42"
+    - "Get information about album 15"
+
+    Returns:
+        Dictionary containing detailed album information
+    """
+    try:
+        album = lidarr_service.get_album(album_id)
+
+        return {
+            "id": album.id,
+            "title": album.title,
+            "artist": album.artist_name,
+            "releaseDate": album.release_date,
+            "monitored": album.monitored,
+            "hasFile": album.has_file,
+            "genres": album.genres or [],
+            "statistics": {
+                "trackFileCount": album.statistics.track_file_count if album.statistics else 0,
+                "trackCount": album.statistics.track_count if album.statistics else 0,
+                "totalTrackCount": album.statistics.total_track_count if album.statistics else 0,
+                "sizeOnDisk": album.statistics.size_on_disk if album.statistics else 0,
+            } if album.statistics else None,
+            "data": album.data
+        }
+    except Exception as e:
+        logger.error(f"Error getting album details for ID {album_id}: {e}")
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def get_artist_details(artist_id: int = Field(..., description="Lidarr artist ID")) -> Dict[str, Any]:
+    """
+    Get detailed information about a specific artist.
+
+    This tool fetches comprehensive details about an artist from Lidarr,
+    including album count, statistics, and metadata.
+
+    Example queries:
+    - "Show me details for artist ID 7"
+    - "Get information about artist 23"
+
+    Returns:
+        Dictionary containing detailed artist information
+    """
+    try:
+        artist = lidarr_service.get_artist(artist_id)
+
+        return {
+            "id": artist.id,
+            "name": artist.name,
+            "monitored": artist.monitored,
+            "genres": artist.genres or [],
+            "statistics": {
+                "albumCount": artist.statistics.album_count if artist.statistics else 0,
+                "trackFileCount": artist.statistics.track_file_count if artist.statistics else 0,
+                "trackCount": artist.statistics.track_count if artist.statistics else 0,
+                "totalTrackCount": artist.statistics.total_track_count if artist.statistics else 0,
+                "sizeOnDisk": artist.statistics.size_on_disk if artist.statistics else 0,
+            } if artist.statistics else None,
+            "data": artist.data
+        }
+    except Exception as e:
+        logger.error(f"Error getting artist details for ID {artist_id}: {e}")
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def get_upcoming_albums(
+    days: int = Field(30, description="Number of days to look ahead", ge=1, le=365)
+) -> Dict[str, Any]:
+    """
+    Get upcoming album releases from Lidarr calendar.
+
+    This tool shows albums that are scheduled to be released in the specified timeframe.
+    Useful for tracking new music from your monitored artists.
+
+    Example queries:
+    - "What albums are coming out in the next 30 days?"
+    - "Show me upcoming album releases this week"
+    - "What new music is releasing soon?"
+
+    Returns:
+        Dictionary containing count and list of upcoming albums
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+
+        albums = lidarr_service.get_calendar(start_date, end_date)
+
+        return {
+            "count": len(albums),
+            "albums": [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "artist": a.artist_name,
+                    "releaseDate": a.release_date,
+                    "monitored": a.monitored,
+                    "hasFile": a.has_file,
+                    "genres": a.genres or [],
+                }
+                for a in albums
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting upcoming albums: {e}")
+        return {"error": str(e), "count": 0, "albums": []}
+
+
+@mcp.tool()
+def get_missing_albums(
+    limit: int = Field(100, description="Maximum number of results to return", ge=1, le=1000),
+) -> Dict[str, Any]:
+    """
+    Get albums that are monitored but missing files in Lidarr.
+
+    This tool shows albums that you're monitoring but haven't downloaded yet.
+    Useful for managing your wanted list and tracking what music you're looking for.
+
+    Example queries:
+    - "What albums am I missing?"
+    - "Show me my wanted music"
+    - "Which albums haven't been downloaded yet?"
+
+    Returns:
+        Dictionary containing count and list of missing albums
+    """
+    try:
+        albums = lidarr_service.get_wanted_missing()
+
+        # Apply limit
+        albums = albums[:limit]
+
+        return {
+            "count": len(albums),
+            "albums": [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "artist": a.artist_name,
+                    "releaseDate": a.release_date,
+                    "monitored": a.monitored,
+                    "genres": a.genres or [],
+                }
+                for a in albums
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting missing albums: {e}")
+        return {"error": str(e), "count": 0, "albums": []}
+
+
+@mcp.tool()
+def get_music_collection_statistics() -> Dict[str, Any]:
+    """
+    Get comprehensive statistics about your music library.
+
+    This tool provides an overview of your entire music collection including:
+    - Total number of artists and albums
+    - Download statistics
+    - Storage usage
+    - Genre distribution
+
+    Example queries:
+    - "Show me my music library stats"
+    - "How much music do I have?"
+    - "What's my music collection size?"
+
+    Returns:
+        Dictionary containing comprehensive music collection statistics
+    """
+    try:
+        artists = lidarr_service.get_all_artists()
+        albums = lidarr_service.get_all_albums()
+
+        total_artists = len(artists)
+        total_albums = len(albums)
+        total_tracks = sum(
+            a.statistics.track_count if a.statistics else 0 for a in albums
+        )
+        total_size = sum(
+            a.statistics.size_on_disk if a.statistics else 0 for a in albums
+        )
+        downloaded_albums = sum(1 for a in albums if a.has_file)
+        monitored_albums = sum(1 for a in albums if a.monitored)
+
+        # Calculate genre distribution
+        genre_count: Dict[str, int] = {}
+        for album in albums:
+            for genre in album.genres or []:
+                genre_count[genre] = genre_count.get(genre, 0) + 1
+
+        top_genres = sorted(genre_count.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "artists": {
+                "total": total_artists,
+                "monitored": sum(1 for a in artists if a.monitored),
+            },
+            "albums": {
+                "total": total_albums,
+                "downloaded": downloaded_albums,
+                "monitored": monitored_albums,
+                "missing": monitored_albums - downloaded_albums,
+            },
+            "tracks": {
+                "total": total_tracks,
+            },
+            "storage": {
+                "totalBytes": total_size,
+                "totalGB": round(total_size / (1024**3), 2),
+            },
+            "topGenres": [
+                {"genre": genre, "count": count} for genre, count in top_genres
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting music collection statistics: {e}")
+        return {"error": str(e)}
+
+
+# =============================================================================
 # Resources
 # =============================================================================
 
@@ -668,6 +1114,63 @@ def series_resource() -> str:
         return output
     except Exception as e:
         logger.error(f"Error fetching series resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@mcp.resource("lidarr://albums")
+def albums_resource() -> str:
+    """
+    Browse all available albums from Lidarr.
+
+    Returns a formatted list of all albums in your music collection.
+    """
+    try:
+        albums = lidarr_service.get_all_albums()
+        output = f"# Music Albums Collection ({len(albums)} total)\n\n"
+
+        for album in albums[:100]:  # Limit to first 100 for resource
+            output += f"## {album.title} - {album.artist_name}\n"
+            output += f"- ID: {album.id}\n"
+            output += f"- Release Date: {album.release_date or 'N/A'}\n"
+            output += f"- Downloaded: {'Yes' if album.has_file else 'No'}\n"
+            output += f"- Monitored: {'Yes' if album.monitored else 'No'}\n"
+            output += f"- Genres: {', '.join(album.genres) if album.genres else 'N/A'}\n\n"
+
+        if len(albums) > 100:
+            output += f"\n... and {len(albums) - 100} more albums\n"
+
+        return output
+    except Exception as e:
+        logger.error(f"Error fetching albums resource: {e}")
+        return f"Error: {str(e)}"
+
+
+@mcp.resource("lidarr://artists")
+def artists_resource() -> str:
+    """
+    Browse all available artists from Lidarr.
+
+    Returns a formatted list of all artists in your music collection.
+    """
+    try:
+        artists = lidarr_service.get_all_artists()
+        output = f"# Music Artists Collection ({len(artists)} total)\n\n"
+
+        for artist in artists[:100]:  # Limit to first 100 for resource
+            output += f"## {artist.name}\n"
+            output += f"- ID: {artist.id}\n"
+            output += f"- Monitored: {'Yes' if artist.monitored else 'No'}\n"
+            if artist.statistics:
+                output += f"- Albums: {artist.statistics.album_count}\n"
+                output += f"- Tracks: {artist.statistics.track_count}\n"
+            output += f"- Genres: {', '.join(artist.genres) if artist.genres else 'N/A'}\n\n"
+
+        if len(artists) > 100:
+            output += f"\n... and {len(artists) - 100} more artists\n"
+
+        return output
+    except Exception as e:
+        logger.error(f"Error fetching artists resource: {e}")
         return f"Error: {str(e)}"
 
 

@@ -33,6 +33,20 @@ class SonarrConfig:
 
 
 @dataclass
+class LidarrConfig:
+    """Configuration for Lidarr API."""
+    api_key: str
+    base_path: str = "/api/v1"
+    port: str = "8686"
+    nas_ip: str = "10.0.0.23"
+
+    @property
+    def base_url(self) -> str:
+        """Get the full base URL for Lidarr API."""
+        return f"http://{self.nas_ip}:{self.port}{self.base_path}"
+
+
+@dataclass
 class JellyfinConfig:
     """Configuration for Jellyfin API."""
     base_url: str

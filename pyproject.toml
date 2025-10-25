@@ -1,7 +1,7 @@
 [project]
 name = "radarr-sonarr-mcp"
-version = "2.0.0"
-description = "FastMCP 2.0+ Server for Radarr and Sonarr media management with Jellyfin/Plex integration"
+version = "2.1.0"
+description = "FastMCP 2.0+ Server for Radarr, Sonarr, and Lidarr media management with Trakt/Jellyfin/Plex integration"
 authors = [
   { name = "Berry", email = "berry@berry.com" }
 ]
@@ -22,7 +22,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Operating System :: OS Independent"
 ]
-keywords = ["mcp", "model-context-protocol", "radarr", "sonarr", "jellyfin", "plex", "media", "ai", "llm"]
+keywords = ["mcp", "model-context-protocol", "radarr", "sonarr", "lidarr", "trakt", "jellyfin", "plex", "media", "ai", "llm", "music"]
 
 [project.urls]
 Homepage = "https://github.com/BerryKuipers/radarr-sonarr-mcp"
