@@ -1,13 +1,15 @@
 # Radarr-Sonarr MCP Server - Feature Roadmap
 
-## 🎯 Current Implementation (v2.0.0)
+## 🎯 Current Implementation (v2.1.0)
 
 ### ✅ Completed Features
-- 9 Tools (3 movies, 6 series)
-- 2 Resources (browseable collections)
-- 4 Prompts (recommendations, binge-finding, stats, actor search)
-- Watch status integration (Jellyfin, Plex)
-- Comprehensive error handling
+- 27 Tools (3 movies, 4 series, 9 music, 5 calendar/stats, 6 Trakt)
+- 4 Resources (movies, series, albums, artists)
+- 8 Prompts (recommendations, binge-finding, stats, actor search, calendar, trending, etc.)
+- Watch status integration (Trakt, Jellyfin, Plex) with priority system
+- Lidarr music management integration
+- Dedicated API endpoints for calendar & missing content (performance optimized)
+- Comprehensive error handling with caching
 - Full MCP specification compliance
 
 ---

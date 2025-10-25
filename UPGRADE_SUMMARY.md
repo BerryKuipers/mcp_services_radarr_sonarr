@@ -8,7 +8,8 @@ This repository has been successfully upgraded to implement the latest Model Con
 
 ### Version Update
 - **Previous**: v0.1.0 (basic MCP implementation)
-- **Current**: v2.0.0 (FastMCP 2.0+ with full MCP primitives)
+- **v2.0.0**: FastMCP 2.0+ with full MCP primitives, Trakt integration
+- **Current**: v2.1.0 (Added Lidarr music management + performance optimizations)
 
 ### Critical Fixes
 

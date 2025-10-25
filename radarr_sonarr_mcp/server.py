@@ -1182,7 +1182,7 @@ def get_upcoming_movies(
     """
     Get movies releasing in the next N days (in cinemas or digital).
 
-    Useful for planning what to watch and staying updated on new releases.
+    Uses Radarr's dedicated calendar API endpoint for optimal performance.
 
     Example queries:
     - "What movies are coming out this month?"
@@ -1195,38 +1195,26 @@ def get_upcoming_movies(
         Dictionary containing upcoming movies with release dates
     """
     try:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
-        all_movies = radarr_service.get_all_movies()
-        today = datetime.datetime.now()
-        end_date = today + datetime.timedelta(days=days_ahead)
-
-        upcoming = []
-        for movie in all_movies:
-            # Check if movie has a release date in the data
-            release_date_str = movie.data.get('inCinemas') or movie.data.get('digitalRelease')
-            if release_date_str:
-                try:
-                    release_date = datetime.datetime.fromisoformat(release_date_str.replace('Z', '+00:00'))
-                    if today <= release_date <= end_date:
-                        upcoming.append({
-                            "id": movie.id,
-                            "title": movie.title,
-                            "year": movie.year,
-                            "releaseDate": release_date_str,
-                            "overview": movie.overview,
-                            "genres": movie.genres or [],
-                            "hasFile": movie.has_file,
-                        })
-                except (ValueError, AttributeError):
-                    pass
-
-        # Sort by release date
-        upcoming.sort(key=lambda x: x["releaseDate"])
+        movies = radarr_service.get_calendar(start_date, end_date)
 
         return {
-            "count": len(upcoming),
+            "count": len(movies),
             "daysAhead": days_ahead,
-            "movies": upcoming
+            "movies": [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "year": m.year,
+                    "releaseDate": m.data.get('inCinemas') or m.data.get('digitalRelease'),
+                    "overview": m.overview,
+                    "genres": m.genres or [],
+                    "hasFile": m.has_file,
+                }
+                for m in movies
+            ]
         }
     except Exception as e:
         logger.error(f"Error getting upcoming movies: {e}")
@@ -1241,7 +1229,7 @@ def get_upcoming_episodes(
     """
     Get TV episodes airing in the next N days.
 
-    Useful for staying current with your TV shows.
+    Uses Sonarr's dedicated calendar API endpoint for optimal performance.
 
     Example queries:
     - "What new episodes are coming this week?"
@@ -1255,47 +1243,32 @@ def get_upcoming_episodes(
         Dictionary containing upcoming episodes with air dates
     """
     try:
+        start_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
 
-        all_series = sonarr_service.get_all_series()
-        today = datetime.datetime.now()
-        end_date = today + datetime.timedelta(days=days_ahead)
+        episodes = sonarr_service.get_calendar(start_date, end_date)
 
-        upcoming = []
-        for series in all_series:
-            if not unmonitored and not series.data.get('monitored', True):
-                continue
-
-            try:
-                episodes = sonarr_service.get_episodes(series.id)
-                for episode in episodes:
-                    if episode.air_date:
-                        try:
-                            air_date = datetime.datetime.fromisoformat(episode.air_date)
-                            if today <= air_date <= end_date:
-                                upcoming.append({
-                                    "seriesId": series.id,
-                                    "seriesTitle": series.title,
-                                    "episodeId": episode.id,
-                                    "seasonNumber": episode.season_number,
-                                    "episodeNumber": episode.episode_number,
-                                    "title": episode.title,
-                                    "airDate": episode.air_date,
-                                    "hasFile": episode.has_file,
-                                    "overview": episode.overview,
-                                })
-                        except (ValueError, AttributeError):
-                            pass
-            except Exception as e:
-                logger.debug(f"Error getting episodes for series {series.id}: {e}")
-                continue
-
-        # Sort by air date
-        upcoming.sort(key=lambda x: x["airDate"])
+        # Filter by monitored status if requested
+        if not unmonitored:
+            episodes = [e for e in episodes if e.get('series', {}).get('monitored', True)]
 
         return {
-            "count": len(upcoming),
+            "count": len(episodes),
             "daysAhead": days_ahead,
-            "episodes": upcoming
+            "episodes": [
+                {
+                    "seriesId": e.get('seriesId'),
+                    "seriesTitle": e.get('series', {}).get('title', 'Unknown'),
+                    "episodeId": e.get('id'),
+                    "seasonNumber": e.get('seasonNumber'),
+                    "episodeNumber": e.get('episodeNumber'),
+                    "title": e.get('title'),
+                    "airDate": e.get('airDate') or e.get('airDateUtc'),
+                    "hasFile": e.get('hasFile', False),
+                    "overview": e.get('overview', ''),
+                }
+                for e in episodes
+            ]
         }
     except Exception as e:
         logger.error(f"Error getting upcoming episodes: {e}")
@@ -1313,7 +1286,7 @@ def get_missing_movies(
     """
     Get movies in your library that haven't been downloaded yet.
 
-    Shows your wishlist of wanted movies that are being monitored.
+    Uses Radarr's dedicated wanted/missing API endpoint with pagination support.
 
     Example queries:
     - "What movies am I missing?"
@@ -1326,23 +1299,24 @@ def get_missing_movies(
         Dictionary containing missing movies
     """
     try:
-        all_movies = radarr_service.get_all_movies()
-        missing = [
-            {
-                "id": m.id,
-                "title": m.title,
-                "year": m.year,
-                "overview": m.overview,
-                "status": m.status,
-                "genres": m.genres or [],
-            }
-            for m in all_movies
-            if not m.has_file and m.data.get('monitored', True)
-        ][:limit]
+        missing_movies = radarr_service.get_wanted_missing()
+
+        # Apply limit
+        missing_movies = missing_movies[:limit]
 
         return {
-            "count": len(missing),
-            "movies": missing
+            "count": len(missing_movies),
+            "movies": [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "year": m.year,
+                    "overview": m.overview,
+                    "status": m.status,
+                    "genres": m.genres or [],
+                }
+                for m in missing_movies
+            ]
         }
     except Exception as e:
         logger.error(f"Error getting missing movies: {e}")
@@ -1357,7 +1331,7 @@ def get_missing_episodes(
     """
     Get episodes that haven't been downloaded yet.
 
-    Shows episodes you're missing from monitored series.
+    Uses Sonarr's dedicated wanted/missing API endpoint with pagination support.
 
     Example queries:
     - "What episodes am I missing?"
@@ -1371,44 +1345,30 @@ def get_missing_episodes(
         Dictionary containing missing episodes
     """
     try:
-        missing = []
+        missing_episodes = sonarr_service.get_wanted_missing()
 
+        # Filter by series_id if specified
         if series_id:
-            series_list = [s for s in sonarr_service.get_all_series() if s.id == series_id]
-        else:
-            series_list = sonarr_service.get_all_series()
+            missing_episodes = [e for e in missing_episodes if e.get('seriesId') == series_id]
 
-        for series in series_list:
-            if not series.data.get('monitored', True):
-                continue
-
-            try:
-                episodes = sonarr_service.get_episodes(series.id)
-                for episode in episodes:
-                    if not episode.has_file and episode.monitored:
-                        missing.append({
-                            "seriesId": series.id,
-                            "seriesTitle": series.title,
-                            "episodeId": episode.id,
-                            "seasonNumber": episode.season_number,
-                            "episodeNumber": episode.episode_number,
-                            "title": episode.title,
-                            "airDate": episode.air_date,
-                            "overview": episode.overview,
-                        })
-
-                        if len(missing) >= limit:
-                            break
-            except Exception as e:
-                logger.debug(f"Error getting episodes for series {series.id}: {e}")
-                continue
-
-            if len(missing) >= limit:
-                break
+        # Apply limit
+        missing_episodes = missing_episodes[:limit]
 
         return {
-            "count": len(missing),
-            "episodes": missing
+            "count": len(missing_episodes),
+            "episodes": [
+                {
+                    "seriesId": e.get('seriesId'),
+                    "seriesTitle": e.get('series', {}).get('title', 'Unknown'),
+                    "episodeId": e.get('id'),
+                    "seasonNumber": e.get('seasonNumber'),
+                    "episodeNumber": e.get('episodeNumber'),
+                    "title": e.get('title'),
+                    "airDate": e.get('airDate') or e.get('airDateUtc'),
+                    "overview": e.get('overview', ''),
+                }
+                for e in missing_episodes
+            ]
         }
     except Exception as e:
         logger.error(f"Error getting missing episodes: {e}")
