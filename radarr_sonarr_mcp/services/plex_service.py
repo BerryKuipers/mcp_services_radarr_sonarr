@@ -1,5 +1,9 @@
+import logging
 import requests
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
+
 
 class PlexService:
     """

@@ -2,8 +2,12 @@
 
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+import logging
 import requests
-from ..config import SonarrConfig
+
+from radarr_sonarr_mcp.config import SonarrConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,10 +120,34 @@ class SonarrService:
             
             return series_list
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error fetching series from Sonarr: {e}")
             raise Exception(f"Failed to fetch series from Sonarr: {e}")
     
+    def get_series(self, series_id: int) -> Series:
+        """
+        Fetch a single TV series by ID from Sonarr.
+
+        Args:
+            series_id: The Sonarr series ID
+
+        Returns:
+            Series object
+
+        Raises:
+            Exception: If series not found or API error
+        """
+        try:
+            response = requests.get(
+                f"{self.config.base_url}/series/{series_id}",
+                params={"apikey": self.config.api_key},
+                timeout=30
+            )
+            response.raise_for_status()
+            return Series.from_dict(response.json())
+        except requests.RequestException as e:
+            logging.error(f"Error fetching series ID {series_id} from Sonarr: {e}")
+            raise Exception(f"Failed to fetch series from Sonarr: {e}")
+
     def lookup_series(self, term: str) -> List[Series]:
         """Look up TV series by search term."""
         try:
@@ -136,7 +164,6 @@ class SonarrService:
             
             return series_list
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error looking up series in Sonarr: {e}")
             raise Exception(f"Failed to lookup series from Sonarr: {e}")
     
@@ -156,7 +183,6 @@ class SonarrService:
             
             return episodes
         except requests.RequestException as e:
-            import logging
             logging.error(f"Error fetching episodes for series ID {series_id}: {e}")
             raise Exception(f"Failed to fetch episodes: {e}")
 
@@ -176,3 +202,80 @@ class SonarrService:
         # This is an assumption - implementation may vary
         # Assuming 'watchlist' tag with ID 1 (adjust as needed)
         return 1 in (series.tags or [])
+
+    def get_calendar(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch upcoming episode releases from Sonarr calendar.
+
+        Args:
+            start_date: Start date in ISO format (YYYY-MM-DD)
+            end_date: End date in ISO format (YYYY-MM-DD)
+
+        Returns:
+            List of upcoming episodes with series information
+        """
+        try:
+            params = {"apikey": self.config.api_key}
+            if start_date:
+                params["start"] = start_date
+            if end_date:
+                params["end"] = end_date
+
+            response = requests.get(
+                f"{self.config.base_url}/calendar",
+                params=params,
+                timeout=30
+            )
+            response.raise_for_status()
+
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Error fetching calendar from Sonarr: {e}")
+            raise Exception(f"Failed to fetch calendar from Sonarr: {e}")
+
+    def get_wanted_missing(self) -> List[Dict[str, Any]]:
+        """
+        Fetch wanted/missing episodes from Sonarr with pagination support.
+
+        Returns:
+            List of all missing episodes
+        """
+        try:
+            episodes = []
+            page = 1
+            page_size = 100
+            total_records = None
+
+            while True:
+                response = requests.get(
+                    f"{self.config.base_url}/wanted/missing",
+                    params={
+                        "apikey": self.config.api_key,
+                        "page": page,
+                        "pageSize": page_size
+                    },
+                    timeout=30
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                records = data.get('records', [])
+
+                # Add episodes from this page
+                episodes.extend(records)
+
+                # Get total records from first page
+                if total_records is None:
+                    total_records = data.get('totalRecords', 0)
+
+                # Check if we've fetched all records
+                if len(episodes) >= total_records or len(records) < page_size:
+                    break
+
+                page += 1
+
+            logger.info(f"Fetched {len(episodes)} missing episodes from Sonarr across {page} page(s)")
+            return episodes
+        except requests.RequestException as e:
+            logger.error(f"Error fetching missing episodes from Sonarr: {e}")
+            raise Exception(f"Failed to fetch missing episodes from Sonarr: {e}")
