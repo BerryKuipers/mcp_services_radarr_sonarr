@@ -67,6 +67,11 @@ def load_config() -> Dict[str, Any]:
                 "baseUrl": os.environ.get('PLEX_BASE_URL', ''),
                 "token": os.environ.get('PLEX_TOKEN', ''),
             },
+            "traktConfig": {
+                "clientId": os.environ.get('TRAKT_CLIENT_ID', ''),
+                "accessToken": os.environ.get('TRAKT_ACCESS_TOKEN', ''),
+                "clientSecret": os.environ.get('TRAKT_CLIENT_SECRET', ''),
+            },
             "server": {
                 "port": int(os.environ.get('MCP_SERVER_PORT', '3000'))
             }
@@ -100,6 +105,7 @@ def load_config() -> Dict[str, Any]:
         },
         "jellyfinConfig": {"baseUrl": "", "apiKey": "", "userId": ""},
         "plexConfig": {"baseUrl": "", "token": ""},
+        "traktConfig": {"clientId": "", "accessToken": "", "clientSecret": ""},
         "server": {"port": 3000}
     }
 
@@ -112,6 +118,8 @@ def is_watched_series(title: str, config: Dict[str, Any], sonarr_service: Sonarr
     """
     Check if a series is watched using available media services.
 
+    Checks Trakt, Jellyfin, and Plex in order of priority.
+
     Args:
         title: Series title to check
         config: Configuration dictionary
@@ -121,6 +129,16 @@ def is_watched_series(title: str, config: Dict[str, Any], sonarr_service: Sonarr
         True if series is watched, False otherwise
     """
     statuses = []
+
+    # Check Trakt first (most reliable for watch status)
+    trakt_cfg = config.get("traktConfig", {})
+    if trakt_cfg.get("clientId"):
+        try:
+            from radarr_sonarr_mcp.services.trakt_service import TraktService
+            trakt = TraktService(trakt_cfg)
+            statuses.append(trakt.is_show_watched(title))
+        except Exception as e:
+            logger.debug(f"Trakt check failed for '{title}': {e}")
 
     # Check Jellyfin
     jellyfin_cfg = config.get("jellyfinConfig", {})
@@ -150,18 +168,31 @@ def is_watched_series(title: str, config: Dict[str, Any], sonarr_service: Sonarr
     return False
 
 
-def is_watched_movie(title: str, config: Dict[str, Any]) -> bool:
+def is_watched_movie(title: str, config: Dict[str, Any], year: Optional[int] = None) -> bool:
     """
     Check if a movie is watched using available media services.
+
+    Checks Trakt, Jellyfin, and Plex in order of priority.
 
     Args:
         title: Movie title to check
         config: Configuration dictionary
+        year: Movie release year (for better Trakt matching)
 
     Returns:
         True if movie is watched, False otherwise
     """
     statuses = []
+
+    # Check Trakt first (most reliable for watch status)
+    trakt_cfg = config.get("traktConfig", {})
+    if trakt_cfg.get("clientId"):
+        try:
+            from radarr_sonarr_mcp.services.trakt_service import TraktService
+            trakt = TraktService(trakt_cfg)
+            statuses.append(trakt.is_movie_watched(title, year))
+        except Exception as e:
+            logger.debug(f"Trakt movie check failed for '{title}': {e}")
 
     # Check Jellyfin
     jellyfin_cfg = config.get("jellyfinConfig", {})
@@ -262,12 +293,12 @@ def get_available_movies(
             if watched:
                 filtered_movies = [
                     m for m in filtered_movies
-                    if is_watched_movie(m.title, config)
+                    if is_watched_movie(m.title, config, m.year)
                 ]
             else:
                 filtered_movies = [
                     m for m in filtered_movies
-                    if not is_watched_movie(m.title, config)
+                    if not is_watched_movie(m.title, config, m.year)
                 ]
 
         if actors:
@@ -293,7 +324,7 @@ def get_available_movies(
                     "hasFile": m.has_file,
                     "status": m.status,
                     "genres": m.genres or [],
-                    "watched": is_watched_movie(m.title, config),
+                    "watched": is_watched_movie(m.title, config, m.year),
                 }
                 for m in filtered_movies
             ]
@@ -919,7 +950,7 @@ def get_collection_statistics() -> Dict[str, Any]:
         # Movie statistics
         movie_count = len(movies)
         movies_downloaded = sum(1 for m in movies if m.has_file)
-        movies_watched = sum(1 for m in movies if is_watched_movie(m.title, config))
+        movies_watched = sum(1 for m in movies if is_watched_movie(m.title, config, m.year))
 
         # Series statistics
         series_count = len(series)
@@ -968,6 +999,290 @@ def get_collection_statistics() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting collection statistics: {e}")
         return {"error": str(e)}
+
+
+# =============================================================================
+# Tools - Trakt Integration
+# =============================================================================
+
+@mcp.tool()
+def get_trakt_trending_movies(
+    limit: int = Field(10, description="Number of results", ge=1, le=50),
+) -> Dict[str, Any]:
+    """
+    Get currently trending movies from Trakt.
+
+    Shows what movies people are watching right now worldwide.
+
+    Example queries:
+    - "What movies are trending on Trakt?"
+    - "Show me popular movies people are watching"
+
+    Args:
+        limit: Number of movies to return (1-50)
+
+    Returns:
+        Dictionary containing trending movies with watcher counts
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "movies": []}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        trending = trakt.get_trending_movies(limit)
+
+        return {
+            "count": len(trending),
+            "movies": [
+                {
+                    "title": item.get("movie", {}).get("title"),
+                    "year": item.get("movie", {}).get("year"),
+                    "overview": item.get("movie", {}).get("overview"),
+                    "watchers": item.get("watchers", 0),
+                    "rating": item.get("movie", {}).get("rating"),
+                    "genres": item.get("movie", {}).get("genres", []),
+                }
+                for item in trending
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting trending movies from Trakt: {e}")
+        return {"error": str(e), "count": 0, "movies": []}
+
+
+@mcp.tool()
+def get_trakt_trending_shows(
+    limit: int = Field(10, description="Number of results", ge=1, le=50),
+) -> Dict[str, Any]:
+    """
+    Get currently trending TV shows from Trakt.
+
+    Shows what TV series people are watching right now worldwide.
+
+    Example queries:
+    - "What shows are trending on Trakt?"
+    - "Show me popular TV series people are binge-watching"
+
+    Args:
+        limit: Number of shows to return (1-50)
+
+    Returns:
+        Dictionary containing trending shows with watcher counts
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "shows": []}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        trending = trakt.get_trending_shows(limit)
+
+        return {
+            "count": len(trending),
+            "shows": [
+                {
+                    "title": item.get("show", {}).get("title"),
+                    "year": item.get("show", {}).get("year"),
+                    "overview": item.get("show", {}).get("overview"),
+                    "watchers": item.get("watchers", 0),
+                    "rating": item.get("show", {}).get("rating"),
+                    "genres": item.get("show", {}).get("genres", []),
+                    "network": item.get("show", {}).get("network"),
+                }
+                for item in trending
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting trending shows from Trakt: {e}")
+        return {"error": str(e), "count": 0, "shows": []}
+
+
+@mcp.tool()
+def get_trakt_recommendations_movies(
+    limit: int = Field(10, description="Number of recommendations", ge=1, le=25),
+) -> Dict[str, Any]:
+    """
+    Get personalized movie recommendations from Trakt.
+
+    Based on your watch history, returns movies you might enjoy.
+    Requires Trakt authentication (access token).
+
+    Example queries:
+    - "What movies does Trakt recommend for me?"
+    - "Suggest movies based on what I've watched"
+
+    Args:
+        limit: Number of recommendations (1-25)
+
+    Returns:
+        Dictionary containing personalized movie recommendations
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "movies": []}
+        if not trakt_cfg.get("accessToken"):
+            return {"error": "Trakt access token required for recommendations. Please set TRAKT_ACCESS_TOKEN.", "movies": []}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        recommendations = trakt.get_recommended_movies(limit)
+
+        return {
+            "count": len(recommendations),
+            "movies": [
+                {
+                    "title": movie.get("title"),
+                    "year": movie.get("year"),
+                    "overview": movie.get("overview"),
+                    "rating": movie.get("rating"),
+                    "genres": movie.get("genres", []),
+                }
+                for movie in recommendations
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting Trakt movie recommendations: {e}")
+        return {"error": str(e), "count": 0, "movies": []}
+
+
+@mcp.tool()
+def get_trakt_recommendations_shows(
+    limit: int = Field(10, description="Number of recommendations", ge=1, le=25),
+) -> Dict[str, Any]:
+    """
+    Get personalized TV show recommendations from Trakt.
+
+    Based on your watch history, returns shows you might enjoy.
+    Requires Trakt authentication (access token).
+
+    Example queries:
+    - "What shows does Trakt recommend for me?"
+    - "Suggest TV series based on my taste"
+
+    Args:
+        limit: Number of recommendations (1-25)
+
+    Returns:
+        Dictionary containing personalized show recommendations
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "shows": []}
+        if not trakt_cfg.get("accessToken"):
+            return {"error": "Trakt access token required for recommendations. Please set TRAKT_ACCESS_TOKEN.", "shows": []}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        recommendations = trakt.get_recommended_shows(limit)
+
+        return {
+            "count": len(recommendations),
+            "shows": [
+                {
+                    "title": show.get("title"),
+                    "year": show.get("year"),
+                    "overview": show.get("overview"),
+                    "rating": show.get("rating"),
+                    "genres": show.get("genres", []),
+                    "network": show.get("network"),
+                }
+                for show in recommendations
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting Trakt show recommendations: {e}")
+        return {"error": str(e), "count": 0, "shows": []}
+
+
+@mcp.tool()
+def get_trakt_user_stats() -> Dict[str, Any]:
+    """
+    Get your Trakt user statistics.
+
+    Shows your watch history statistics including total movies/shows watched,
+    time spent watching, and more.
+
+    Requires Trakt authentication (access token).
+
+    Example queries:
+    - "Show me my Trakt stats"
+    - "How many movies have I watched according to Trakt?"
+
+    Returns:
+        Dictionary containing comprehensive user statistics
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID."}
+        if not trakt_cfg.get("accessToken"):
+            return {"error": "Trakt access token required. Please set TRAKT_ACCESS_TOKEN."}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        stats = trakt.get_user_stats()
+
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting Trakt user stats: {e}")
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def get_trakt_watch_history(
+    media_type: Optional[str] = Field(None, description="Filter: 'movies' or 'shows'"),
+    limit: int = Field(20, description="Number of items", ge=1, le=100),
+) -> Dict[str, Any]:
+    """
+    Get your recent watch history from Trakt.
+
+    Shows what you've recently watched across all platforms.
+    Requires Trakt authentication (access token).
+
+    Example queries:
+    - "What have I watched recently on Trakt?"
+    - "Show my movie watch history"
+
+    Args:
+        media_type: Filter by 'movies' or 'shows' (None for all)
+        limit: Number of items to return (1-100)
+
+    Returns:
+        Dictionary containing recent watch history
+    """
+    try:
+        trakt_cfg = config.get("traktConfig", {})
+        if not trakt_cfg.get("clientId"):
+            return {"error": "Trakt not configured. Please set TRAKT_CLIENT_ID.", "history": []}
+        if not trakt_cfg.get("accessToken"):
+            return {"error": "Trakt access token required. Please set TRAKT_ACCESS_TOKEN.", "history": []}
+
+        from radarr_sonarr_mcp.services.trakt_service import TraktService
+        trakt = TraktService(trakt_cfg)
+        history = trakt.get_history(media_type, limit)
+
+        return {
+            "count": len(history),
+            "history": [
+                {
+                    "watchedAt": item.get("watched_at"),
+                    "action": item.get("action"),
+                    "type": item.get("type"),
+                    "movie": item.get("movie") if item.get("type") == "movie" else None,
+                    "show": item.get("show") if item.get("type") == "episode" else None,
+                    "episode": item.get("episode") if item.get("type") == "episode" else None,
+                }
+                for item in history
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting Trakt watch history: {e}")
+        return {"error": str(e), "count": 0, "history": []}
 
 
 # =============================================================================

@@ -3,22 +3,45 @@
     "radarr_sonarr": {
       "command": "uv",
       "args": [
-        "--directory", "D:/berry/Projects/radarr-sonarr-mcp-python",
+        "--directory", "/path/to/radarr-sonarr-mcp",
         "run", "radarr_sonarr_mcp/server.py"
       ],
       "env": {
         "NAS_IP": "10.0.0.23",
         "RADARR_PORT": "7878",
         "SONARR_PORT": "8989",
-        "RADARR_API_KEY": "x",
-        "SONARR_API_KEY": "x",
+        "RADARR_API_KEY": "your_radarr_api_key",
+        "SONARR_API_KEY": "your_sonarr_api_key",
         "MCP_SERVER_PORT": "3000",
         "JELLYFIN_BASE_URL": "http://10.0.0.23:5055",
         "JELLYFIN_API_KEY": "your_jellyfin_api_key",
         "JELLYFIN_USER_ID": "your_jellyfin_user_id",
         "PLEX_BASE_URL": "http://10.0.0.23:32400",
-        "PLEX_TOKEN": "your_plex_token"
+        "PLEX_TOKEN": "your_plex_token",
+        "TRAKT_CLIENT_ID": "your_trakt_client_id",
+        "TRAKT_ACCESS_TOKEN": "your_trakt_access_token",
+        "TRAKT_CLIENT_SECRET": "your_trakt_client_secret"
       }
     }
   }
 }
+
+## Trakt.tv Setup Instructions
+
+1. Go to https://trakt.tv/oauth/applications
+2. Create a new application
+3. Use these redirect URIs: `urn:ietf:wg:oauth:2.0:oob` (for manual token)
+4. Copy the Client ID and Client Secret
+5. Set TRAKT_CLIENT_ID in your environment
+6. For personalized features (recommendations, watch history):
+   - Generate an access token using OAuth
+   - Set TRAKT_ACCESS_TOKEN in your environment
+
+## Watch Status Priority
+
+The server checks watch status in this order:
+1. Trakt (most reliable if configured)
+2. Jellyfin
+3. Plex
+
+If any service reports a movie/show as watched, it's considered watched.

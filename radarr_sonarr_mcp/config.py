@@ -48,6 +48,14 @@ class PlexConfig:
 
 
 @dataclass
+class TraktConfig:
+    """Configuration for Trakt API."""
+    client_id: str = ""
+    access_token: str = ""
+    client_secret: str = ""
+
+
+@dataclass
 class ServerConfig:
     """Configuration for MCP Server."""
     port: int = 3000
