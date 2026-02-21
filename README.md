@@ -2,6 +2,10 @@
 
 A Python-based Model Context Protocol (MCP) server that provides AI assistants like Claude with access to your Radarr (movies) and Sonarr (TV series) data.
 
+<a href="https://glama.ai/mcp/servers/@BerryKuipers/mcp_services_radarr_sonarr">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@BerryKuipers/mcp_services_radarr_sonarr/badge" alt="Radarr and Sonarr Server MCP server" />
+</a>
+
 ## Overview
 
 This MCP server allows AI assistants to query your movie and TV show collection via Radarr and Sonarr APIs. Built with FastMCP, it implements the standardized protocol for AI context that Claude Desktop and other MCP-compatible clients can use.
